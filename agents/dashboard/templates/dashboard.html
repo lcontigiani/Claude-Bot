@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Agentes IA</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ---- Reset & Base ---- */
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --primary:#2563eb;--primary-dark:#1d4ed8;
+  --bg:#f0f2f5;--card:#ffffff;
+  --border:#e5e7eb;--text:#1f2937;--text-light:#6b7280;
+  --critical:#dc2626;--warning:#d97706;--info:#2563eb;--ok:#059669;
+  --radius:12px;--shadow:0 1px 4px rgba(0,0,0,.10);
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;}
+
+/* ---- Layout ---- */
+.navbar{background:#1e293b;color:#fff;padding:14px 24px;display:flex;
+  align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.navbar h1{font-size:17px;font-weight:600;}
+.navbar .live-dot{width:8px;height:8px;background:#22c55e;border-radius:50%;
+  display:inline-block;margin-right:6px;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.container{max-width:1400px;margin:0 auto;padding:20px 24px;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.grid-3{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:20px;}
+.card{background:var(--card);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:20px;border:1px solid var(--border);}
+h2{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text);}
+
+/* ---- Agent Status ---- */
+.agent-card{background:var(--card);border-radius:var(--radius);padding:16px;
+  box-shadow:var(--shadow);border:1px solid var(--border);text-align:center;}
+.agent-card .agent-icon{font-size:24px;margin-bottom:8px;}
+.agent-card .agent-name{font-weight:600;font-size:13px;margin-bottom:4px;}
+.agent-card .agent-status{font-size:11px;padding:2px 8px;border-radius:20px;
+  display:inline-block;margin-bottom:6px;}
+.status-completed{background:#d1fae5;color:#065f46;}
+.status-running{background:#dbeafe;color:#1e40af;}
+.status-failed{background:#fee2e2;color:#991b1b;}
+.status-idle{background:#f3f4f6;color:#6b7280;}
+.agent-card .agent-meta{font-size:11px;color:var(--text-light);}
+
+/* ---- Findings ---- */
+.feed{max-height:380px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;}
+.finding-item{padding:10px 14px;border-radius:8px;border-left:4px solid;
+  background:#fafafa;border:1px solid var(--border);}
+.finding-item.critical{border-left-color:var(--critical);background:#fff5f5;}
+.finding-item.warning{border-left-color:var(--warning);background:#fffbeb;}
+.finding-item.info{border-left-color:var(--info);background:#eff6ff;}
+.finding-title{font-weight:600;font-size:13px;margin-bottom:2px;}
+.finding-meta{font-size:11px;color:var(--text-light);display:flex;gap:8px;align-items:center;}
+.badge{padding:1px 7px;border-radius:10px;font-size:11px;font-weight:500;}
+.badge.critical{background:#fee2e2;color:#991b1b;}
+.badge.warning{background:#fef3c7;color:#92400e;}
+.badge.info{background:#dbeafe;color:#1e40af;}
+.btn-sm{padding:3px 10px;border-radius:6px;border:1px solid var(--border);
+  background:#fff;font-size:11px;cursor:pointer;transition:background .15s;}
+.btn-sm:hover{background:#f3f4f6;}
+
+/* ---- Proposals Kanban ---- */
+.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.kanban-col{background:#f9fafb;border-radius:10px;padding:12px;border:1px solid var(--border);}
+.kanban-col h3{font-size:12px;font-weight:600;color:var(--text-light);
+  margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em;}
+.proposal-card{background:#fff;border-radius:8px;padding:12px;
+  border:1px solid var(--border);margin-bottom:8px;box-shadow:var(--shadow);}
+.proposal-card .p-title{font-weight:600;font-size:13px;margin-bottom:6px;}
+.proposal-card .p-meta{font-size:11px;color:var(--text-light);margin-bottom:8px;}
+.proposal-card .p-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.btn-accept{background:#059669;color:#fff;border:none;padding:3px 10px;
+  border-radius:6px;font-size:11px;cursor:pointer;}
+.btn-reject{background:#dc2626;color:#fff;border:none;padding:3px 10px;
+  border-radius:6px;font-size:11px;cursor:pointer;}
+.btn-progress{background:#d97706;color:#fff;border:none;padding:3px 10px;
+  border-radius:6px;font-size:11px;cursor:pointer;}
+.priority-critical{color:var(--critical);font-weight:700;}
+.priority-high{color:#d97706;font-weight:600;}
+.priority-medium{color:#2563eb;}
+.priority-low{color:var(--text-light);}
+
+/* ---- Reports ---- */
+.report-content{max-height:300px;overflow-y:auto;font-size:13px;
+  line-height:1.6;color:var(--text);}
+.report-content p{margin-bottom:8px;}
+.report-tabs{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;}
+.tab{padding:5px 12px;border-radius:6px;border:1px solid var(--border);
+  background:#fff;cursor:pointer;font-size:12px;transition:all .15s;}
+.tab.active{background:var(--primary);color:#fff;border-color:var(--primary);}
+
+/* ---- Message Log ---- */
+.msg-log{max-height:250px;overflow-y:auto;font-size:12px;font-family:monospace;}
+.msg-item{padding:4px 0;border-bottom:1px solid #f3f4f6;display:flex;gap:8px;}
+.msg-time{color:var(--text-light);flex-shrink:0;}
+.msg-sender{color:var(--primary);font-weight:600;}
+.msg-type{background:#f3f4f6;border-radius:4px;padding:0 5px;}
+
+/* ---- Chart ---- */
+.chart-wrap{position:relative;height:200px;}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px;}
+
+/* ---- Empty state ---- */
+.empty{text-align:center;color:var(--text-light);padding:24px;font-size:13px;}
+</style>
+</head>
+<body>
+
+<nav class="navbar">
+  <h1>🤖 Dashboard de Agentes IA</h1>
+  <div style="display:flex;align-items:center;gap:12px;font-size:13px;opacity:.8;">
+    <span><span class="live-dot"></span>En vivo</span>
+    <span id="last-update">Conectando...</span>
+    <a href="http://127.0.0.1:5050" target="_blank"
+       style="color:#93c5fd;text-decoration:none;">→ Ir al Chatbot</a>
+  </div>
+</nav>
+
+<div class="container">
+
+  <!-- Agent Status -->
+  <div class="grid-3" id="agent-status-grid">
+    <!-- Se renderiza dinamicamente -->
+  </div>
+
+  <div class="grid-2" style="margin-bottom:20px;">
+    <!-- Findings Feed -->
+    <div class="card">
+      <h2>⚠️ Findings Recientes
+        <span id="findings-count" style="font-size:12px;color:var(--text-light);font-weight:400;"></span>
+      </h2>
+      <div class="feed" id="findings-feed">
+        <div class="empty">Esperando analisis de agentes...</div>
+      </div>
+    </div>
+
+    <!-- Metrics Chart -->
+    <div class="card">
+      <h2>📈 Performance del Servidor</h2>
+      <div class="chart-wrap">
+        <canvas id="perf-chart"></canvas>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--text-light);">
+        Tiempo de respuesta del endpoint /api/archivos (ms)
+      </div>
+    </div>
+  </div>
+
+  <!-- Proposals Kanban -->
+  <div class="card" style="margin-bottom:20px;">
+    <h2>💡 Propuestas de Mejora</h2>
+    <div class="kanban">
+      <div class="kanban-col">
+        <h3>⏳ Pendientes</h3>
+        <div id="col-pending"></div>
+      </div>
+      <div class="kanban-col">
+        <h3>✅ Aceptadas</h3>
+        <div id="col-accepted"></div>
+      </div>
+      <div class="kanban-col">
+        <h3>🔧 En progreso</h3>
+        <div id="col-in_progress"></div>
+      </div>
+      <div class="kanban-col">
+        <h3>🏁 Listas</h3>
+        <div id="col-done"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Reports -->
+    <div class="card">
+      <h2>📄 Reportes de Agentes</h2>
+      <div class="report-tabs" id="report-tabs"></div>
+      <div class="report-content" id="report-content">
+        <div class="empty">Esperando primer reporte...</div>
+      </div>
+    </div>
+
+    <!-- Message Log -->
+    <div class="card">
+      <h2>🔗 Comunicacion entre Agentes</h2>
+      <div class="msg-log" id="msg-log">
+        <div class="empty">Sin mensajes aun...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// Estado de la aplicacion
+// ============================================================
+const state = {
+  agents: {},
+  findings: {},
+  reports: {},
+  proposals: {},
+  metrics: [],
+  messages: [],
+  activeReport: null,
+};
+
+const AGENT_LABELS = {
+  system_monitor:       { icon: "🔍", label: "Monitor" },
+  orchestrator:         { icon: "🧠", label: "Orquestador" },
+  code_analyst:         { icon: "🔬", label: "Analista Cod." },
+  improvement_proposer: { icon: "💡", label: "Mejorador" },
+  data_reporter:        { icon: "📊", label: "Reportes" },
+};
+
+// ============================================================
+// Chart
+// ============================================================
+const perfCtx = document.getElementById("perf-chart").getContext("2d");
+const perfChart = new Chart(perfCtx, {
+  type: "line",
+  data: {
+    labels: [],
+    datasets: [{
+      label: "ms",
+      data: [],
+      borderColor: "#2563eb",
+      backgroundColor: "rgba(37,99,235,.08)",
+      tension: 0.3,
+      pointRadius: 2,
+      fill: true,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, grid: { color: "#f3f4f6" } },
+      x: { display: false },
+    }
+  }
+});
+
+function pushMetric(m) {
+  if (m.metric_name !== "api_response_ms") return;
+  const label = m.recorded_at.substring(11, 19);
+  perfChart.data.labels.push(label);
+  perfChart.data.datasets[0].data.push(m.metric_value);
+  if (perfChart.data.labels.length > 60) {
+    perfChart.data.labels.shift();
+    perfChart.data.datasets[0].data.shift();
+  }
+  perfChart.update("none");
+}
+
+// ============================================================
+// Render helpers
+// ============================================================
+
+function renderAgentStatus() {
+  const grid = document.getElementById("agent-status-grid");
+  const agentNames = Object.keys(AGENT_LABELS);
+  grid.innerHTML = agentNames.map(name => {
+    const info = AGENT_LABELS[name];
+    const data = state.agents[name] || {};
+    const status = data.status || "idle";
+    const lastRun = data.last_run ? new Date(data.last_run).toLocaleTimeString("es-AR") : "Nunca";
+    const tokens = data.tokens ? `${data.tokens} tokens` : "";
+    return `
+      <div class="agent-card">
+        <div class="agent-icon">${info.icon}</div>
+        <div class="agent-name">${info.label}</div>
+        <span class="agent-status status-${status}">${status}</span>
+        <div class="agent-meta">${lastRun}</div>
+        <div class="agent-meta" style="color:#9ca3af">${tokens}</div>
+      </div>`;
+  }).join("");
+}
+
+function renderFindings() {
+  const feed = document.getElementById("findings-feed");
+  const all = Object.values(state.findings).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  document.getElementById("findings-count").textContent = all.length ? `(${all.length})` : "";
+  if (!all.length) {
+    feed.innerHTML = '<div class="empty">Sin findings aun...</div>';
+    return;
+  }
+  feed.innerHTML = all.slice(0, 30).map(f => `
+    <div class="finding-item ${f.severity}" id="fi-${f.finding_id}">
+      <div class="finding-title">${escHtml(f.title)}</div>
+      <div class="finding-meta">
+        <span class="badge ${f.severity}">${f.severity}</span>
+        <span>${f.agent_name}</span>
+        <span>${f.created_at.substring(11,16)}</span>
+        ${f.acknowledged ? '<span style="color:#059669">✓ OK</span>' : `
+          <button class="btn-sm" onclick="ackFinding('${f.finding_id}')">Reconocer</button>`}
+      </div>
+    </div>`).join("");
+}
+
+function renderProposals() {
+  const cols = { pending: [], accepted: [], in_progress: [], done: [] };
+  Object.values(state.proposals).forEach(p => {
+    const col = cols[p.status] || cols.pending;
+    col.push(p);
+  });
+  for (const [status, proposals] of Object.entries(cols)) {
+    const el = document.getElementById(`col-${status}`);
+    if (!el) continue;
+    if (!proposals.length) {
+      el.innerHTML = '<div class="empty" style="padding:12px">-</div>';
+      continue;
+    }
+    el.innerHTML = proposals.map(p => `
+      <div class="proposal-card">
+        <div class="p-title">${escHtml(p.title)}</div>
+        <div class="p-meta">
+          <span class="priority-${p.priority}">${p.priority.toUpperCase()}</span>
+          · ${p.estimated_effort}
+        </div>
+        ${status === "pending" ? `
+        <div class="p-actions">
+          <button class="btn-accept" onclick="updateProposal('${p.proposal_id}','accepted')">✓ Aceptar</button>
+          <button class="btn-reject" onclick="updateProposal('${p.proposal_id}','rejected')">✗ Rechazar</button>
+          <button class="btn-progress" onclick="updateProposal('${p.proposal_id}','in_progress')">⚙ En progreso</button>
+        </div>` : ""}
+        ${status === "accepted" ? `
+        <div class="p-actions">
+          <button class="btn-progress" onclick="updateProposal('${p.proposal_id}','in_progress')">⚙ Empezar</button>
+        </div>` : ""}
+        ${status === "in_progress" ? `
+        <div class="p-actions">
+          <button class="btn-accept" onclick="updateProposal('${p.proposal_id}','done')">✓ Listo</button>
+        </div>` : ""}
+      </div>`).join("");
+  }
+}
+
+function renderReports() {
+  const reports = Object.values(state.reports).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const tabs = document.getElementById("report-tabs");
+  const content = document.getElementById("report-content");
+  if (!reports.length) {
+    tabs.innerHTML = "";
+    content.innerHTML = '<div class="empty">Esperando primer reporte...</div>';
+    return;
+  }
+  if (!state.activeReport || !state.reports[state.activeReport]) {
+    state.activeReport = reports[0].report_id;
+  }
+  tabs.innerHTML = reports.slice(0, 6).map(r => `
+    <button class="tab ${r.report_id === state.activeReport ? 'active' : ''}"
+      onclick="selectReport('${r.report_id}')">
+      ${AGENT_LABELS[r.agent_name]?.icon || "📄"} ${r.title.substring(0, 25)}
+    </button>`).join("");
+  const active = state.reports[state.activeReport];
+  if (active) {
+    content.innerHTML = `<div style="font-size:11px;color:var(--text-light);margin-bottom:8px">
+      ${active.agent_name} · ${new Date(active.created_at).toLocaleString("es-AR")}
+    </div>` + simpleMarkdown(active.content);
+  }
+}
+
+function renderMessages() {
+  const log = document.getElementById("msg-log");
+  if (!state.messages.length) {
+    log.innerHTML = '<div class="empty">Sin mensajes aun...</div>';
+    return;
+  }
+  log.innerHTML = state.messages.slice(-50).reverse().map(m => `
+    <div class="msg-item">
+      <span class="msg-time">${m.sent_at.substring(11,16)}</span>
+      <span class="msg-sender">${m.sender_agent}</span>
+      <span style="color:var(--text-light)">→</span>
+      <span>${m.recipient_agent}</span>
+      <span class="msg-type">${m.message_type}</span>
+    </div>`).join("");
+}
+
+// ============================================================
+// Acciones
+// ============================================================
+
+async function ackFinding(id) {
+  await fetch(`/api/findings/${id}/acknowledge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: "Revisado desde dashboard" })
+  });
+  if (state.findings[id]) state.findings[id].acknowledged = 1;
+  renderFindings();
+}
+
+async function updateProposal(id, status) {
+  await fetch(`/api/proposals/${id}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status })
+  });
+  if (state.proposals[id]) state.proposals[id].status = status;
+  renderProposals();
+}
+
+function selectReport(id) {
+  state.activeReport = id;
+  renderReports();
+}
+
+// ============================================================
+// SSE + actualizacion de estado
+// ============================================================
+
+function applyData(data) {
+  // agent_runs
+  (data.agent_runs || []).forEach(r => {
+    if (!state.agents[r.agent_name] ||
+        r.started_at > (state.agents[r.agent_name]?.last_run || "")) {
+      state.agents[r.agent_name] = {
+        status:   r.status,
+        last_run: r.started_at,
+        tokens:   r.token_count,
+      };
+    }
+  });
+  // findings
+  (data.findings || []).forEach(f => { state.findings[f.finding_id] = f; });
+  // reports
+  (data.reports || []).forEach(r => { state.reports[r.report_id] = r; });
+  // proposals
+  (data.proposals || []).forEach(p => { state.proposals[p.proposal_id] = p; });
+  // metrics
+  (data.system_metrics || []).forEach(m => pushMetric(m));
+  // messages
+  (data.agent_messages || []).forEach(m => {
+    if (!state.messages.find(x => x.message_id === m.message_id)) {
+      state.messages.push(m);
+    }
+  });
+}
+
+function renderAll() {
+  renderAgentStatus();
+  renderFindings();
+  renderProposals();
+  renderReports();
+  renderMessages();
+  document.getElementById("last-update").textContent =
+    "Actualizado: " + new Date().toLocaleTimeString("es-AR");
+}
+
+function connectSSE() {
+  const es = new EventSource("/api/stream");
+
+  es.addEventListener("snapshot", e => {
+    applyData(JSON.parse(e.data));
+    renderAll();
+  });
+
+  es.addEventListener("update", e => {
+    applyData(JSON.parse(e.data));
+    renderAll();
+  });
+
+  es.onerror = () => {
+    document.getElementById("last-update").textContent = "Reconectando...";
+    es.close();
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+// ============================================================
+// Utils
+// ============================================================
+
+function escHtml(s) {
+  return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function simpleMarkdown(text) {
+  return String(text || "")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/^#{1,3} (.+)$/gm, "<strong>$1</strong>")
+    .replace(/^[-*] (.+)$/gm, "<li>$1</li>")
+    .split("\n\n").map(p => p.trim()
+      ? (p.startsWith("<li>") ? `<ul>${p}</ul>` : `<p>${p}</p>`)
+      : ""
+    ).join("");
+}
+
+// ============================================================
+// Init
+// ============================================================
+renderAll();
+connectSSE();
+</script>
+</body>
+</html>
