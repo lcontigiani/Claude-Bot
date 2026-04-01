@@ -108,6 +108,30 @@ h2{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text);}
 
 /* ---- Empty state ---- */
 .empty{text-align:center;color:var(--text-light);padding:24px;font-size:13px;}
+
+/* ---- Control Panel ---- */
+.control-bar{display:flex;align-items:center;gap:10px;margin-bottom:20px;
+  padding:14px 20px;background:var(--card);border-radius:var(--radius);
+  box-shadow:var(--shadow);border:1px solid var(--border);flex-wrap:wrap;}
+.control-bar .control-label{font-weight:600;font-size:13px;margin-right:6px;}
+.ctrl-btn{padding:7px 16px;border-radius:8px;border:1px solid var(--border);
+  background:#fff;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;
+  display:inline-flex;align-items:center;gap:5px;}
+.ctrl-btn:hover{background:#f3f4f6;border-color:#d1d5db;}
+.ctrl-btn.active{background:var(--ok);color:#fff;border-color:var(--ok);}
+.ctrl-btn.pause{background:#fef3c7;color:#92400e;border-color:#fcd34d;}
+.ctrl-btn.danger{background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
+.ctrl-btn.danger:hover{background:#dc2626;color:#fff;}
+.ctrl-btn:disabled{opacity:.5;cursor:not-allowed;}
+.status-indicator{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.status-indicator.on{background:#22c55e;box-shadow:0 0 6px rgba(34,197,94,.5);}
+.status-indicator.paused{background:#eab308;box-shadow:0 0 6px rgba(234,179,8,.4);}
+.status-indicator.off{background:#ef4444;}
+.control-divider{width:1px;height:28px;background:var(--border);margin:0 6px;}
+.agent-toggle{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);
+  background:#fff;cursor:pointer;transition:all .15s;}
+.agent-toggle:hover{background:#f3f4f6;}
+.agent-toggle.paused{background:#fef3c7;border-color:#fcd34d;color:#92400e;}
 </style>
 </head>
 <body>
@@ -123,6 +147,45 @@ h2{font-size:15px;font-weight:600;margin-bottom:14px;color:var(--text);}
 </nav>
 
 <div class="container">
+
+  <!-- Control Panel -->
+  <div class="control-bar" id="control-bar">
+    <span class="control-label">Control:</span>
+    <span class="status-indicator on" id="global-indicator"></span>
+    <span id="global-status-text" style="font-size:12px;margin-right:4px;">Activo</span>
+
+    <button class="ctrl-btn active" id="btn-resume-all" onclick="controlResumeAll()">
+      ▶ Reanudar Todo
+    </button>
+    <button class="ctrl-btn pause" id="btn-pause-all" onclick="controlPauseAll()">
+      ⏸ Pausar Todo
+    </button>
+
+    <div class="control-divider"></div>
+
+    <span style="font-size:12px;color:var(--text-light);">Por agente:</span>
+    <button class="agent-toggle" id="toggle-system_monitor" onclick="toggleAgent('system_monitor')">
+      🔍 Monitor
+    </button>
+    <button class="agent-toggle" id="toggle-orchestrator" onclick="toggleAgent('orchestrator')">
+      🧠 Orquest.
+    </button>
+    <button class="agent-toggle" id="toggle-code_analyst" onclick="toggleAgent('code_analyst')">
+      🔬 Analista
+    </button>
+    <button class="agent-toggle" id="toggle-improvement_proposer" onclick="toggleAgent('improvement_proposer')">
+      💡 Mejorador
+    </button>
+    <button class="agent-toggle" id="toggle-data_reporter" onclick="toggleAgent('data_reporter')">
+      📊 Reportes
+    </button>
+
+    <div class="control-divider"></div>
+
+    <button class="ctrl-btn danger" id="btn-shutdown" onclick="controlShutdown()">
+      ⏹ Apagar Sistema
+    </button>
+  </div>
 
   <!-- Agent Status -->
   <div class="grid-3" id="agent-status-grid">
@@ -272,13 +335,18 @@ function renderAgentStatus() {
     const status = data.status || "idle";
     const lastRun = data.last_run ? new Date(data.last_run).toLocaleTimeString("es-AR") : "Nunca";
     const tokens = data.tokens ? `${data.tokens} tokens` : "";
+    const isPaused = pausedAgents.has(name);
     return `
-      <div class="agent-card">
+      <div class="agent-card" style="${isPaused ? 'opacity:.5;' : ''}">
         <div class="agent-icon">${info.icon}</div>
         <div class="agent-name">${info.label}</div>
-        <span class="agent-status status-${status}">${status}</span>
+        <span class="agent-status status-${isPaused ? 'idle' : status}">
+          ${isPaused ? 'pausado' : status}
+        </span>
         <div class="agent-meta">${lastRun}</div>
         <div class="agent-meta" style="color:#9ca3af">${tokens}</div>
+        <button class="btn-sm" style="margin-top:6px;font-size:10px;"
+          onclick="runAgentNow('${name}')">▶ Ejecutar ahora</button>
       </div>`;
   }).join("");
 }
@@ -495,10 +563,109 @@ function simpleMarkdown(text) {
 }
 
 // ============================================================
+// Control del Scheduler
+// ============================================================
+
+let schedulerPaused = false;
+let pausedAgents = new Set();
+
+async function fetchControlStatus() {
+  try {
+    const r = await fetch("/api/control/status");
+    const data = await r.json();
+    schedulerPaused = !data.scheduler_running;
+    pausedAgents.clear();
+    (data.jobs || []).forEach(j => { if (j.paused) pausedAgents.add(j.id); });
+    renderControlBar();
+  } catch(e) { /* ignore */ }
+}
+
+function renderControlBar() {
+  const indicator = document.getElementById("global-indicator");
+  const statusText = document.getElementById("global-status-text");
+  const btnPause = document.getElementById("btn-pause-all");
+  const btnResume = document.getElementById("btn-resume-all");
+
+  if (schedulerPaused) {
+    indicator.className = "status-indicator paused";
+    statusText.textContent = "Pausado";
+    btnPause.style.display = "none";
+    btnResume.style.display = "";
+  } else {
+    indicator.className = "status-indicator on";
+    statusText.textContent = "Activo";
+    btnPause.style.display = "";
+    btnResume.style.display = "none";
+  }
+
+  // Botones de agentes individuales
+  const agentIds = ["system_monitor","orchestrator","code_analyst","improvement_proposer","data_reporter"];
+  agentIds.forEach(id => {
+    const btn = document.getElementById("toggle-" + id);
+    if (!btn) return;
+    if (pausedAgents.has(id)) {
+      btn.classList.add("paused");
+      btn.title = "Click para reanudar";
+    } else {
+      btn.classList.remove("paused");
+      btn.title = "Click para pausar";
+    }
+  });
+}
+
+async function controlPauseAll() {
+  if (!confirm("Pausar TODOS los agentes? No se consumira API hasta reanudar.")) return;
+  await fetch("/api/control/pause-all", { method: "POST" });
+  schedulerPaused = true;
+  renderControlBar();
+}
+
+async function controlResumeAll() {
+  await fetch("/api/control/resume-all", { method: "POST" });
+  schedulerPaused = false;
+  pausedAgents.clear();
+  renderControlBar();
+}
+
+async function toggleAgent(agentId) {
+  if (pausedAgents.has(agentId)) {
+    await fetch(`/api/control/resume/${agentId}`, { method: "POST" });
+    pausedAgents.delete(agentId);
+  } else {
+    await fetch(`/api/control/pause/${agentId}`, { method: "POST" });
+    pausedAgents.add(agentId);
+  }
+  renderControlBar();
+}
+
+async function runAgentNow(agentId) {
+  const label = AGENT_LABELS[agentId]?.label || agentId;
+  await fetch(`/api/control/run/${agentId}`, { method: "POST" });
+  // Flash feedback
+  const cards = document.querySelectorAll(".agent-card");
+  // Small visual feedback via the status text
+  setTimeout(fetchControlStatus, 2000);
+}
+
+async function controlShutdown() {
+  if (!confirm("APAGAR completamente el sistema de agentes?\nSe detendra el scheduler y el dashboard.")) return;
+  if (!confirm("Esta seguro? El proceso terminara y debera reiniciarse manualmente.")) return;
+  await fetch("/api/control/shutdown", { method: "POST" });
+  document.getElementById("global-indicator").className = "status-indicator off";
+  document.getElementById("global-status-text").textContent = "APAGADO";
+  document.getElementById("btn-pause-all").disabled = true;
+  document.getElementById("btn-resume-all").disabled = true;
+  document.getElementById("btn-shutdown").disabled = true;
+}
+
+// ============================================================
 // Init
 // ============================================================
 renderAll();
 connectSSE();
+fetchControlStatus();
+// Refrescar estado de control cada 15 segundos
+setInterval(fetchControlStatus, 15000);
 </script>
 </body>
 </html>

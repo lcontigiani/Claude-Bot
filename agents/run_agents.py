@@ -1,6 +1,7 @@
 """
 Punto de entrada del sistema multi-agente.
 Inicializa DB, instancia agentes, arranca scheduler y dashboard.
+Expone controles de pausa/reanudacion/shutdown via el dashboard.
 """
 
 import sys
@@ -20,7 +21,7 @@ from agents.data_reporter        import DataReporterAgent
 from agents.improvement_proposer import ImprovementProposerAgent
 from agents.orchestrator         import OrchestratorAgent
 from scheduler.scheduler         import build_scheduler
-from dashboard.dashboard_server  import run_dashboard
+from dashboard.dashboard_server  import run_dashboard, set_scheduler_ref, set_agents_ref
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,7 +86,11 @@ def main():
     scheduler.start()
     logger.info("Scheduler activo.")
 
-    # 5. Arrancar dashboard en thread separado
+    # 5. Pasar referencias al dashboard para los controles
+    set_scheduler_ref(scheduler)
+    set_agents_ref(agents)
+
+    # 6. Arrancar dashboard en thread separado
     logger.info(f"Iniciando dashboard en http://127.0.0.1:{cfg.DASHBOARD_PORT}")
     dash_thread = threading.Thread(target=run_dashboard, daemon=True)
     dash_thread.start()
@@ -98,7 +103,7 @@ def main():
     print("  Presiona Ctrl+C para detener.")
     print("=" * 55)
 
-    # 6. Mantener el proceso vivo
+    # 7. Mantener el proceso vivo
     try:
         while True:
             time.sleep(30)

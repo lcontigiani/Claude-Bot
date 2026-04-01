@@ -1,12 +1,15 @@
 """
 Servidor Flask del dashboard de agentes.
 Corre en puerto 5051. Sirve la UI y expone la API para el frontend.
+Incluye controles de pausa/reanudacion/shutdown del scheduler.
 """
 
 import json
 import time
 import sys
 import os
+import threading
+import signal
 from datetime import datetime, timezone
 from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
@@ -17,6 +20,20 @@ from core import memory
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
+
+# ---- Referencias al scheduler y agentes (inyectadas por run_agents.py) ----
+_scheduler = None
+_agents = {}
+
+
+def set_scheduler_ref(scheduler):
+    global _scheduler
+    _scheduler = scheduler
+
+
+def set_agents_ref(agents):
+    global _agents
+    _agents = agents
 
 
 def _now_iso():
@@ -104,6 +121,100 @@ def runs():
     agent = request.args.get("agent")
     limit = int(request.args.get("limit", 50))
     return jsonify(memory.get_recent_runs(agent_name=agent, limit=limit))
+
+
+# ---- Control del Scheduler ----
+
+@app.route("/api/control/status")
+def control_status():
+    """Estado actual del scheduler y cada agente."""
+    if not _scheduler:
+        return jsonify({"error": "Scheduler no inicializado"}), 503
+
+    running = _scheduler.running
+    jobs = []
+    for job in _scheduler.get_jobs():
+        jobs.append({
+            "id":           job.id,
+            "name":         job.name,
+            "next_run":     str(job.next_run_time) if job.next_run_time else None,
+            "paused":       job.next_run_time is None,
+        })
+
+    return jsonify({
+        "scheduler_running": running,
+        "jobs": jobs,
+    })
+
+
+@app.route("/api/control/pause-all", methods=["POST"])
+def pause_all():
+    """Pausa TODOS los agentes. No consumen API hasta reanudar."""
+    if not _scheduler:
+        return jsonify({"error": "Scheduler no inicializado"}), 503
+    _scheduler.pause()
+    return jsonify({"ok": True, "message": "Todos los agentes pausados. No se consumira API."})
+
+
+@app.route("/api/control/resume-all", methods=["POST"])
+def resume_all():
+    """Reanuda TODOS los agentes."""
+    if not _scheduler:
+        return jsonify({"error": "Scheduler no inicializado"}), 503
+    _scheduler.resume()
+    return jsonify({"ok": True, "message": "Todos los agentes reanudados."})
+
+
+@app.route("/api/control/pause/<agent_id>", methods=["POST"])
+def pause_agent(agent_id):
+    """Pausa un agente individual por su ID."""
+    if not _scheduler:
+        return jsonify({"error": "Scheduler no inicializado"}), 503
+    try:
+        _scheduler.pause_job(agent_id)
+        return jsonify({"ok": True, "message": f"Agente '{agent_id}' pausado."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/control/resume/<agent_id>", methods=["POST"])
+def resume_agent(agent_id):
+    """Reanuda un agente individual por su ID."""
+    if not _scheduler:
+        return jsonify({"error": "Scheduler no inicializado"}), 503
+    try:
+        _scheduler.resume_job(agent_id)
+        return jsonify({"ok": True, "message": f"Agente '{agent_id}' reanudado."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/control/run/<agent_id>", methods=["POST"])
+def run_agent_now(agent_id):
+    """Ejecuta un agente manualmente una sola vez (aun si esta pausado)."""
+    if agent_id not in _agents:
+        return jsonify({"error": f"Agente '{agent_id}' no encontrado"}), 404
+    agent = _agents[agent_id]
+    t = threading.Thread(
+        target=agent.run,
+        kwargs={"triggered_by": "manual_dashboard"},
+        daemon=True,
+    )
+    t.start()
+    return jsonify({"ok": True, "message": f"Agente '{agent_id}' ejecutandose en background."})
+
+
+@app.route("/api/control/shutdown", methods=["POST"])
+def shutdown_system():
+    """Detiene completamente el scheduler y termina el proceso."""
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+    # Dar tiempo a que responda antes de morir
+    def _kill():
+        time.sleep(1)
+        os.kill(os.getpid(), signal.SIGTERM)
+    threading.Thread(target=_kill, daemon=True).start()
+    return jsonify({"ok": True, "message": "Sistema detenido. El proceso terminara en 1 segundo."})
 
 
 def run_dashboard():
